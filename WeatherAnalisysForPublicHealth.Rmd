@@ -1,0 +1,217 @@
+---
+output: html_document
+---
+
+### **Analysis of the impacts of the major storms and weather events to the public health and economics**  
+
+#### **Synopsis**
+
+Nowadays the temporal events and storms causing a lot of social problems, building destructions, lost of lives, environmental problems and economic problems. The study of temporal events and storms should be analysed to predict when other events will occur or to understand a cause of a temporal event or a storm.  
+  
+For this study was used a dataset of the U.S National Oceanic and Atmospheric Administration's (NOAA) with registers of storms that occurred between 1950 and 2011. This dataset contains information of when and where an event occurred, as well as estimates of any fatalities, injuries, and property damage.
+
+In this analysis will be answered two questions:  
+
+1. Across the United States, which types of events are most harmful with respect to population health?
+2. Across the United States, which types of events have the greatest economic consequences?
+
+#### **Data Processing**
+
+The dataset used for this analysis is available at bzip format and can be downloaded from this [link](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2), more information about this dataset can be found in [National Weather Service](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) and in [National FAQ of Climatical Data Center Storm Events](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf).
+
+To download the dataset and load the data in the R environment, we use the following code:
+
+```{r cache=TRUE}
+
+# URL where dataset can be downloaded
+fileUrl <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+
+# Download the dataset if necessary
+if(!file.exists("data.csv.bz2")) {
+    download.file(url = fileUrl, destfile = "data.csv.bz2")
+}
+
+# Read the dataset
+data <- read.csv("data.csv.bz2")
+
+```
+
+This dataset contains `r nrow(data)` registers and `r ncol(data)` variables, the following code demonstrate the variables of the dataset:
+
+```{r}
+names(data)
+```
+
+To figure out what events are the most harmful for the population, we selected only the EVTYPE, FATALITIES and INJURIES fields, where FATALITIES and INJURIES are summed to sort and select the top 10 events.
+
+```{r results="asis", message=FALSE}
+library(dplyr)
+library(pander)
+
+# Select EVTYPE, FATALITIES and INJURIES
+popHealth <- data %>% 
+    select(EVTYPE, FATALITIES, INJURIES) %>%
+    filter(EVTYPE != "?")
+
+# Sum FATALITIES and INJURIES
+popHealth$TOTAL <- popHealth$FATALITIES + popHealth$INJURIES
+
+# Order by most problematic for population health
+popHealth <- group_by(popHealth, EVTYPE) %>% 
+    summarise_each(funs(sum)) %>%
+    as.data.frame() %>%
+    arrange(-TOTAL)
+
+# Generate a table of the top 10 results
+popHealth <- popHealth[1:10,]
+```
+
+To figure out what events causes the most economical consequences we need to convert first the exponencial character used to describe the value a numerical variable that is codified, in this case the numerical values represent the following list:  
+
+* (1, 2, 3, ..., 9) = (10^1, 10^2, 10^3, ..., 10^9)
+* H or h = 10^2
+* K or k = 10^3
+* M or m = 10^6
+* B or b = 10^9
+    
+The variable *PROPDMG* is multiplied by the base 10 with the expoent of *PROPDMGEXP*, the same for *CROPDMG* and *CROPDMGEXP*.
+
+```{r cache=TRUE}
+# Function to return the numerical equivalent to the exponencial character
+parseExp <- function (ex) {
+    cex <- toupper(as.character(ex))
+    if(cex == "2" | cex == "H") return (10^2)
+    if(cex == "3" | cex == "K") return (10^3)
+    if(cex == "6" | cex == "M") return (10^6)
+    if(cex == "9" | cex == "B") return (10^9)
+    if(cex == "1") return (10^1)
+    if(cex == "4") return (10^4)
+    if(cex == "5") return (10^5)
+    if(cex == "7") return (10^7)
+    if(cex == "8") return (10^8)
+    return (10^0)
+}
+
+# Select the fields: EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG and CROPDMGEXP
+econConseq <- data %>% 
+    select(EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP)
+
+# Convert the expoent characters for each column
+econConseq$PROPDMGEXP <- sapply(econConseq$PROPDMGEXP, parseExp)
+econConseq$CROPDMGEXP <- sapply(econConseq$CROPDMGEXP, parseExp)
+
+# Multiply the amount of value by the expoent
+econConseq$PROPDMG <- econConseq$PROPDMG * econConseq$PROPDMGEXP
+econConseq$CROPDMG <- econConseq$CROPDMG * econConseq$CROPDMGEXP
+
+# Remove the expoent column
+econConseq <- select(econConseq, -c(PROPDMGEXP, CROPDMGEXP))
+econConseq$TOTAL <- econConseq$PROPDMG + econConseq$CROPDMG
+
+# Order by most expensive
+econConseq <- group_by(econConseq, EVTYPE) %>% 
+    summarise_each(funs(sum)) %>%
+    as.data.frame() %>%
+    arrange(-TOTAL)
+
+# Generate a table of the top 10 results
+econConseq <- econConseq[1:10,] 
+```
+
+#### **Results**
+
+We can see in the next table that the TORNADO is the most destructive event than the others, he causes more than eleven times more population harmful than the second that is EXCESSIVE HEAT.
+
+```{r results="asis", message=FALSE}
+# Create a table of the results
+pandoc.table(popHealth)
+```
+
+In the next plot we can check the proportion that a TORNADO have in relationshion with others.
+
+```{r fig.width=8,fig.height=12}
+library(reshape2)
+library(ggplot2)
+
+# Verticalize the data frame
+popHealth <- melt(popHealth, id=c("EVTYPE"))
+# Rename the columns
+names(popHealth) <- c("EVTYPE", "HEALTHTYPE", "VALUE")
+# Convert categorical values to factors
+popHealth$EVTYPE <- factor(popHealth$EVTYPE)
+popHealth$HEALTHTYPE <- factor(popHealth$HEALTHTYPE)
+
+# Create the plot instance
+gg <- ggplot(popHealth, aes(x = reorder(EVTYPE, -VALUE), y = VALUE))
+# Add facter grid
+gg <- gg + facet_grid(HEALTHTYPE ~ .)
+# Add bars to the plot
+gg <- gg + geom_bar(stat = "identity")
+# Add labels text
+gg <- gg + xlab("Event type") + ylab("Quantity")
+# Rotate labels 45 deggrees
+gg <- gg + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# Add legend values
+gg <- gg + geom_text(aes(label = VALUE), vjust = -0.3)
+# Show the plot
+print(gg)
+```
+
+The next table show the most economical loss of properties and crops for weather events or storms, we can see that the flood is the most expensive disaster, but hurricane, tornado and storm has a big significantly participation in the values.
+
+```{r results="asis", message=FALSE}
+# Create a table to show the results, and format the number with comma as decimal separator
+pandoc.table(data.frame(
+    "Event" = econConseq$EVTYPE,
+    "Property" = prettyNum(econConseq$PROPDMG, big.mark = ",", scientific=F),
+    "Crops" = prettyNum(econConseq$CROPDMG, big.mark = ",", scientific=F),
+    "Total" = prettyNum(econConseq$TOTAL, big.mark = ",", scientific=F)
+))
+```
+
+The next plot show this graphic visualization of the previous table.
+
+```{r fig.width=10, fig.height=12}
+library(reshape2)
+library(ggplot2)
+
+# Verticalize the variables
+econConseqPlot <- melt(econConseq, id = c("EVTYPE"))
+
+# Rename the columns
+names(econConseqPlot) <- c("EVTYPE", "DMGTYPE", "VALUE")
+# Convert the categorical values to factors
+econConseqPlot$EVTYPE <- factor(econConseqPlot$EVTYPE)
+econConseqPlot$DMGTYPE <- factor(econConseqPlot$DMGTYPE)
+
+# Create the plot
+gg <- ggplot(econConseqPlot, aes(x = reorder(EVTYPE, VALUE), y = VALUE))
+# Add a facet configuration by damage type
+gg <- gg + facet_grid(DMGTYPE ~ ., 
+                 labeller = as_labeller(c(
+                     "PROPDMG" = "Property",
+                     "CROPDMG" = "Crop",
+                     "TOTAL" = "Total")))
+# Add the geometric bar model
+gg <- gg + geom_bar(stat = "identity")
+# Add texts for the bar with the values of the columns
+gg <- gg + geom_text(aes(label = prettyNum(VALUE, big.mark = ",", scientific=F)), hjust = -0.1)
+# Flip the bar to horizontal format and add X and Y labels
+gg <- gg + coord_flip() + xlab("Event type") + ylab("Quantity")
+# Increase the limit to show the geom_test
+gg <- gg + ylim(0, 19*10^10)
+# Print the plot
+print(gg)
+```
+
+#### **Conclusions**
+
+Based on the analised data we can answer the questions:
+
+1. Across the United States, which types of events are most harmful with respect to population health?
+
+    *The tornado is responsible for the mosts harmful weather events for the population*
+
+2. Across the United States, which types of events have the greatest economic consequences?
+
+    *The flood is responsible for the greater costs with damage in weather events*
