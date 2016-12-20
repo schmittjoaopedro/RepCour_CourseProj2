@@ -39,6 +39,7 @@ data <- read.csv("data.csv.bz2")
 This dataset contains `r nrow(data)` registers and `r ncol(data)` variables, the following code demonstrate the variables of the dataset:
 
 ```{r}
+# Col names
 names(data)
 ```
 
